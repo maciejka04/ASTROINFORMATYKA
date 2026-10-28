@@ -1,8 +1,32 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useImperativeHandle, forwardRef } from 'react'
 import * as d3 from 'd3'
 
 const MARGIN = { top: 20, right: 24, bottom: 48, left: 60 }
 const HEIGHT = 420
+
+// 1. Algorytm automatycznego doboru binów (Reguła Freedmana–Diaconisa)
+export function calculateAutomaticBins(values, domain, logX) {
+  if (!values || values.length < 2) return 30
+  
+  // Jeśli skala logarytmiczna, operujemy na logarytmach
+  const data = logX ? values.map(v => Math.log10(v)) : values
+  const sorted = [...data].sort((a, b) => a - b)
+  
+  const q1 = d3.quantile(sorted, 0.25)
+  const q3 = d3.quantile(sorted, 0.75)
+  const iqr = q3 - q1
+  
+  if (!iqr || iqr === 0) return 30 // Awaryjnie jakby dane były identyczne
+  
+  const n = sorted.length
+  const h = 2 * iqr * Math.pow(n, -1/3) // Szerokość binu wg F-D
+  
+  const rangeSpan = domain[1] - domain[0]
+  const count = Math.round(rangeSpan / h)
+  
+  // Ograniczamy liczbę binów w rozsądnych granicach (np. od 5 do 200)
+  return Math.min(Math.max(count, 5), 200)
+}
 
 function makeThresholds([lo, hi], count, logX) {
   if (logX) {
@@ -14,11 +38,37 @@ function makeThresholds([lo, hi], count, logX) {
   return d3.range(1, count).map((i) => lo + i * step)
 }
 
-export default function Histogram({ values, domain, binCount, logX, xLabel, onBrush }) {
+const Histogram = forwardRef(function Histogram({ values, domain, binCount, autoBins, logX, xLabel, onBrush }, ref) {
   const wrapRef = useRef(null)
   const svgRef = useRef(null)
   const [width, setWidth] = useState(800)
   const [tooltip, setTooltip] = useState(null)
+
+  // 2. Eksport SVG udostępniony na zewnątrz przez ref
+  useImperativeHandle(ref, () => ({
+    exportSvg: () => {
+      const svgElement = svgRef.current
+      if (!svgElement) return
+      
+      const serializer = new XMLSerializer()
+      let source = serializer.serializeToString(svgElement)
+      
+      // Dodajemy namespace XML, żeby plik SVG był poprawny dla przeglądarki/zewnętrznych programów
+      if(!source.match(/^<svg[^>]+xmlns="http\:\/\/www\.w3\.org\/2000\/svg"/)) {
+        source = source.replace(/^<svg/, '<svg xmlns="http://www.w3.org/2000/svg"');
+      }
+      
+      const blob = new Blob([source], { type: 'image/svg+xml;charset=utf-8' })
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = 'histogram_astro.svg'
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      URL.revokeObjectURL(url)
+    }
+  }))
 
   useEffect(() => {
     const ro = new ResizeObserver(([entry]) => setWidth(entry.contentRect.width))
@@ -36,9 +86,12 @@ export default function Histogram({ values, domain, binCount, logX, xLabel, onBr
 
     const x = (logX ? d3.scaleLog() : d3.scaleLinear()).domain(domain).range([0, innerW])
 
+    // Wybieramy liczbę binów: albo sztywną z suwaka, albo wyliczoną automatycznie
+    const effectiveBins = autoBins ? calculateAutomaticBins(values, domain, logX) : binCount
+
     const bins = d3.bin()
       .domain(domain)
-      .thresholds(makeThresholds(domain, binCount, logX))(values)
+      .thresholds(makeThresholds(domain, effectiveBins, logX))(values)
 
     const y = d3.scaleLinear()
       .domain([0, d3.max(bins, (b) => b.length) || 1])
@@ -112,7 +165,7 @@ export default function Histogram({ values, domain, binCount, logX, xLabel, onBr
         bars.classed('hover', false)
         setTooltip(null)
       })
-  }, [values, domain, binCount, logX, xLabel, width, onBrush])
+  }, [values, domain, binCount, autoBins, logX, xLabel, width, onBrush])
 
   return (
     <div className="chart" ref={wrapRef}>
@@ -125,4 +178,6 @@ export default function Histogram({ values, domain, binCount, logX, xLabel, onBr
       {!values.length && <div className="empty">Brak danych w wybranym zakresie</div>}
     </div>
   )
-}
+})
+
+export default Histogram

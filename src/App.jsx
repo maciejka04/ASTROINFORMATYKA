@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import * as d3 from 'd3'
 import Histogram from './Histogram.jsx'
 import RangeFilter from './RangeFilter.jsx'
@@ -23,6 +23,10 @@ export default function App() {
   const [sourceId, setSourceId] = useState(() => sources[0]?.id ?? '')
   const [newUrl, setNewUrl] = useState('')
   const [reloadKey, setReloadKey] = useState(0)
+
+  // Referencja do komponentu Histogram, aby wywołać eksport do SVG
+  const histogramRef = useRef(null)
+  const [autoBins, setAutoBins] = useState(false)
 
   useEffect(() => {
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(sources)) } catch {}
@@ -176,8 +180,23 @@ export default function App() {
             {columns.map((c) => <option key={c} value={c}>{label(c)}{label(c) !== c ? ` (${c})` : ''}</option>)}
           </select>
 
-          <label htmlFor="bins">Liczba przedziałów: {binCount}</label>
-          <input id="bins" type="range" min={5} max={150} value={binCount} onChange={(e) => setBinCount(+e.target.value)} />
+          <label htmlFor="bins">
+            Liczba przedziałów: {autoBins ? '(automatycznie - algorytm F-D)' : binCount}
+          </label>
+          <input
+            id="bins"
+            type="range"
+            min={5}
+            max={150}
+            value={binCount}
+            disabled={autoBins}
+            onChange={(e) => setBinCount(+e.target.value)}
+          />
+
+          <label className="checkbox">
+            <input type="checkbox" checked={autoBins} onChange={(e) => setAutoBins(e.target.checked)} />
+            Automatyczny dobór binów (Freedman–Diaconis)
+          </label>
 
           <label className="checkbox">
             <input type="checkbox" checked={logX} onChange={(e) => setLogX(e.target.checked)} />
@@ -200,10 +219,18 @@ export default function App() {
       </section>
 
       <section className="panel">
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '10px' }}>
+          <button className="secondary" onClick={() => histogramRef.current?.exportSvg()}>
+            💾 Pobierz wykres (SVG)
+          </button>
+        </div>
+
         <Histogram
+          ref={histogramRef}
           values={filtered}
           domain={activeRange}
           binCount={binCount}
+          autoBins={autoBins}
           logX={logX}
           xLabel={label(column)}
           onBrush={handleBrush}

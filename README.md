@@ -22,8 +22,9 @@ Otwórz adres wypisany przez Vite (domyślnie http://localhost:3000).
   - CSV, TSV, separator `;` lub `|` (wykrywany automatycznie)
   - API bez nagłówków CORS są pobierane automatycznie przez proxy serwera dev (`/proxy?url=…`).
 - **Wybór kolumny** – lista kolumn liczbowych wykrywanych automatycznie; zmiana kolumny,
-  liczby przedziałów lub skali (lin/log) od razu przerysowuje wykres.
+  liczby przedziałów, skali (lin/log) lub przełączenie na automatyczny dobór przedziałów (reguła Freedmana–Diaconisa) od razu przerysowuje wykres.
 - **Filtr zakresu** – suwaki i pola „od/do” albo zaznaczenie zakresu myszą na wykresie (brush).
+- **Eksport wykresu** – możliwość pobrania wygenerowanego histogramu do pliku wektorowego SVG jednym kliknięciem.
 - Statystyki (N, średnia, mediana, odch. std., min, max) i podgląd tabeli danych.
 
 ## Struktura
