@@ -31,12 +31,5 @@ export default defineConfig({
   server: {
     port: 3000,
     strictPort: false,
-    proxy: {
-      '/api/exoplanets': {
-        target: 'https://exoplanetarchive.ipac.caltech.edu',
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api\/exoplanets/, '/TAP/sync'),
-      },
-    },
   },
 })

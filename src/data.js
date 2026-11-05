@@ -1,19 +1,16 @@
 import * as d3 from 'd3'
+import { rowsToTable } from './columns.js'
+import { TextTableParser } from './textParser.js'
 
-const EXO_COLUMNS = [
-  'pl_name', 'hostname', 'disc_year', 'pl_orbper', 'pl_orbsmax', 'pl_rade',
-  'pl_bmasse', 'pl_eqt', 'st_teff', 'st_mass', 'st_rad', 'sy_dist',
-]
-
-const EXO_QUERY = `select ${EXO_COLUMNS.join(',')} from pscomppars`
+const DEFAULT_URL =
+  'https://exoplanetarchive.ipac.caltech.edu/TAP/sync?query=select%20pl_name%2Chostname%2Cdisc_year%2Cpl_orbper%2Cpl_orbsmax%2Cpl_rade%2Cpl_bmasse%2Cpl_eqt%2Cst_teff%2Cst_mass%2Cst_rad%2Csy_dist%20from%20pscomppars&format=json'
 
 export const DEFAULT_SOURCES = [
-  {
-    id: 'nasa-exoplanets',
-    label: 'NASA Exoplanet Archive (przykład)',
-    url: `/api/exoplanets?query=${encodeURIComponent(EXO_QUERY)}&format=json`,
-  },
+  { id: 'default', label: 'exoplanetarchive.ipac.caltech.edu/TAP/sync', url: DEFAULT_URL },
 ]
+
+const MAX_JSON_FILE_BYTES = 400 * 1024 * 1024
+const TEXT_SLICE = 1 << 20
 
 export function normalizeUrl(input) {
   const url = input.trim().replace(/^["'<]+|["'>]+$/g, '').replace(/\s+/g, '')
@@ -31,25 +28,11 @@ export function sourceLabel(url) {
   }
 }
 
-export const COLUMN_LABELS = {
-  disc_year: 'Rok odkrycia',
-  pl_orbper: 'Okres orbitalny [dni]',
-  pl_orbsmax: 'Wielka półoś [AU]',
-  pl_rade: 'Promień planety [R⊕]',
-  pl_bmasse: 'Masa planety [M⊕]',
-  pl_eqt: 'Temperatura równowagowa [K]',
-  st_teff: 'Temperatura gwiazdy [K]',
-  st_mass: 'Masa gwiazdy [M☉]',
-  st_rad: 'Promień gwiazdy [R☉]',
-  sy_dist: 'Odległość [pc]',
-}
-
-export const columnLabel = (c, units = {}) =>
-  COLUMN_LABELS[c] ?? (units[c] ? `${c} [${units[c]}]` : c)
+export const columnLabel = (c, units = {}) => (units[c] ? `${c} [${units[c]}]` : c)
 
 const isCrossOrigin = (url) => new URL(url, location.href).origin !== location.origin
 
-async function fetchText(url) {
+export async function fetchText(url) {
   let res
   let viaProxy = false
   try {
@@ -58,61 +41,70 @@ async function fetchText(url) {
     if (!isCrossOrigin(url)) throw err
     res = await fetch(`/proxy?url=${encodeURIComponent(new URL(url).href)}`)
     viaProxy = true
+    if (res.headers.get('content-type')?.includes('text/html')) {
+      throw new Error('serwer nie zezwala na pobieranie z przeglądarki (brak CORS), a proxy działa tylko w „npm run dev”')
+    }
   }
   if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`)
   return { text: await res.text(), contentType: res.headers.get('content-type') ?? '', viaProxy }
 }
 
-export async function loadFromUrl(url) {
-  const { text, contentType, viaProxy } = await fetchText(url)
-  return { ...parseText(text, contentType), viaProxy }
+const looksLikeJson = (text) => /^\s*[[{]/.test(text.replace(/^\uFEFF/, ''))
+
+// Parses a whole response/file body into typed-array tables. onProgress(fraction, rows) is optional.
+export function parseText(text, contentType = '', onProgress) {
+  const trimmed = text.replace(/^\uFEFF/, '').trim()
+  if (!trimmed) throw new Error('Pusta odpowiedź')
+  if (looksLikeJson(trimmed)) {
+    const json = parseJson(trimmed, contentType)
+    if (json) return json
+  }
+  const parser = new TextTableParser()
+  for (let i = 0; i < trimmed.length; i += TEXT_SLICE) {
+    parser.push(trimmed.slice(i, i + TEXT_SLICE))
+    onProgress?.(Math.min(1, (i + TEXT_SLICE) / trimmed.length), parser.rowCount)
+  }
+  return parser.finish()
 }
 
-export function parseText(text, contentType = '') {
-  const trimmed = text.replace(/^﻿/, '').trim()
-  if (!trimmed) throw new Error('Pusta odpowiedź')
+// Streams a File line by line, so files far larger than the maximum JS string length can be read.
+export async function parseFile(file, onProgress) {
+  const head = await file.slice(0, 4096).text()
+  if (looksLikeJson(head)) {
+    if (file.size > MAX_JSON_FILE_BYTES) {
+      throw new Error(`Plik JSON jest za duży (${Math.round(file.size / 2 ** 20)} MB, limit ${MAX_JSON_FILE_BYTES / 2 ** 20} MB) – użyj CSV/tekstu`)
+    }
+    return parseText(await file.text(), file.type, onProgress)
+  }
 
-  if (/^[[{]/.test(trimmed)) {
+  const parser = new TextTableParser()
+  const decoder = new TextDecoder()
+  const reader = file.stream().getReader()
+  let loaded = 0
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    parser.push(decoder.decode(value, { stream: true }))
+    loaded += value.length
+    onProgress?.(loaded / file.size, parser.rowCount)
+  }
+  parser.push(decoder.decode())
+  return parser.finish()
+}
+
+function parseJson(trimmed, contentType) {
+  try {
+    return { format: 'JSON', tables: extractTables(JSON.parse(trimmed)).map(rowsToTable) }
+  } catch (err) {
+    const lines = trimmed.split(/\r?\n/).filter((l) => l.trim())
     try {
-      return { format: 'JSON', tables: extractTables(JSON.parse(trimmed)) }
-    } catch (err) {
-      const lines = trimmed.split(/\r?\n/).filter((l) => l.trim())
-      try {
-        const rows = lines.map((l) => JSON.parse(l))
-        return { format: 'NDJSON', tables: extractTables(rows) }
-      } catch {
-        if (contentType.includes('json')) throw new Error(`Niepoprawny JSON: ${err.message}`)
-      }
+      const rows = lines.map((l) => JSON.parse(l))
+      return { format: 'NDJSON', tables: extractTables(rows).map(rowsToTable) }
+    } catch {
+      if (contentType.includes('json')) throw new Error(`Niepoprawny JSON: ${err.message}`)
+      return null
     }
   }
-
-  if (/^\s*<\?xml|^\s*<(html|!doctype)/i.test(trimmed)) {
-    throw new Error('Odpowiedź to XML/HTML – obsługiwane są JSON, NDJSON, CSV, TSV')
-  }
-
-  const delimiter = detectDelimiter(trimmed)
-  const rows = d3.dsvFormat(delimiter).parse(trimmed, d3.autoType)
-  const name = { ',': 'CSV', '\t': 'TSV', ';': 'CSV (;)', '|': 'PSV (|)', ' ': 'tekst (spacje)' }[delimiter]
-  return { format: name, tables: [{ name: '(tabela)', rows: rows.map(cleanRow), units: {} }] }
-}
-
-function detectDelimiter(text) {
-  const lines = text.split(/\r?\n/).filter((l) => l.trim() && !l.startsWith('#')).slice(0, 10)
-  let best = ','
-  let bestScore = 0
-  for (const d of [',', '\t', ';', '|']) {
-    const counts = lines.map((l) => l.split(d).length - 1)
-    const consistent = counts.every((c) => c === counts[0])
-    const score = counts[0] * (consistent ? 2 : 1)
-    if (counts[0] > 0 && score > bestScore) { best = d; bestScore = score }
-  }
-  return bestScore ? best : ' '
-}
-
-function cleanRow(r) {
-  const out = {}
-  for (const [k, v] of Object.entries(r)) out[k.trim()] = v instanceof Date ? v.toISOString() : v
-  return out
 }
 
 const isPlainObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v)
@@ -181,31 +173,4 @@ function extractTables(json) {
 
   const size = (t) => t.rows.length * Object.keys(t.rows[0] ?? {}).length
   return found.sort((a, b) => size(b) - size(a))
-}
-
-export function numericColumns(rows) {
-  if (!rows.length) return []
-  const keys = [...new Set(rows.slice(0, 500).flatMap(Object.keys))]
-  return keys.filter((k) => {
-    let nonEmpty = 0
-    let numeric = 0
-    for (const r of rows) {
-      const v = r[k]
-      if (v === null || v === undefined || v === '' || typeof v === 'boolean') continue
-      nonEmpty++
-      if (Number.isFinite(+v)) numeric++
-    }
-    return nonEmpty > 0 && numeric / nonEmpty >= 0.5
-  })
-}
-
-export function columnValues(rows, column) {
-  const out = []
-  for (const r of rows) {
-    const v = r[column]
-    if (v === null || v === undefined || v === '' || typeof v === 'boolean') continue
-    const n = +v
-    if (Number.isFinite(n)) out.push(n)
-  }
-  return out
 }
