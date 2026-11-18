@@ -20,13 +20,10 @@ export function detectDelimiter(dataLines) {
     const score = counts[0] * (consistent ? 2 : 1)
     if (counts[0] > 0 && score > bestScore) { best = d; bestScore = score; bestConsistent = consistent }
   }
-  // Tabs used for visual alignment (varying count per line) mean whitespace-separated columns, not TSV.
   if (best === '\t' && !bestConsistent) return ' '
   return bestScore ? best : ' '
 }
 
-// Incremental parser for delimited / whitespace-separated text: feed it arbitrary chunks with push(),
-// then call finish(). Lines starting with '#' and blank lines are skipped.
 export class TextTableParser {
   constructor() {
     this.rest = ''
@@ -68,7 +65,7 @@ export class TextTableParser {
     const dataLines = lines.filter((l) => !isBlank(l) && !isComment(l))
     if (!dataLines.length) throw new Error('Brak wierszy z danymi')
     if (/^\s*<\?xml|^\s*<(html|!doctype)/i.test(dataLines[0])) {
-      throw new Error('Odpowiedź to XML/HTML – obsługiwane są JSON, NDJSON, CSV, TSV i tekst kolumnowy')
+      throw new Error('Odpowiedź to XML/HTML - obsługiwane są JSON, NDJSON, CSV, TSV i tekst kolumnowy')
     }
 
     this.delimiter = detectDelimiter(dataLines)

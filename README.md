@@ -1,72 +1,97 @@
-# Astroinformatyka – interaktywny histogram (React + D3)
+# Interaktywny Histogram D3 (Astroinformatyka)
 
-## Uruchomienie
+Aplikacja webowa do interaktywnej eksploracji, filtracji i wielowymiarowej wizualizacji danych tabelarycznych oraz astrofizycznych z wykorzystaniem biblioteki **D3.js** i frameworka **React**.
 
-```bash
-npm install
-npm run dev
+---
+
+## Wymagania systemowe
+
+* **Node.js**: wersja `>= 18.0.0`
+* **npm**: wersja `>= 9.0.0`
+
+---
+
+## Wykorzystane technologie i biblioteki
+
+### Główne zależności (`dependencies`):
+* **React** (`^18.3.1`) & **React-DOM** (`^18.3.1`) - warstwa interfejsu użytkownika, reaktywne zarządzanie stanem aplikacji.
+* **D3.js** (`^7.9.0`) - silnik wizualizacji danych (skale liniowe i logarytmiczne, generowanie osi, dynamiczne przeliczanie przedziałów, selekcja obszarowa `d3-brush`, renderowanie wektorowe SVG).
+
+### Narzędzia deweloperskie (`devDependencies`):
+* **Vite** (`^5.4.11`) - bundler i lokalny serwer deweloperski z wbudowanym proxy HTTP.
+* **@vitejs/plugin-react** (`^4.3.4`) - integracja React z mechanizmem Fast Refresh w Vite.
+
+---
+
+## Instalacja i uruchomienie
+
+1. Klonowanie repozytorium lub przejście do katalogu projektu:
+   ```bash
+   cd ASTROINFORMATYKA
+   ```
+
+2. Instalacja zależności:
+   ```bash
+   npm install
+   ```
+
+3. Uruchomienie lokalnego serwera deweloperskiego:
+   ```bash
+   npm run dev
+   ```
+   Aplikacja będzie dostępna pod adresem: `http://localhost:3000` (lub wskazanym przez terminal).
+
+4. Budowanie wersji produkcyjnej:
+   ```bash
+   npm run build
+   ```
+
+---
+
+## Główne funkcjonalności
+
+1. **Pobieranie i wczytywanie danych:**
+   * **Zdalne API:** obsługa dowolnych zapytań HTTP GET zwracających dane tabelaryczne (domyślnie podpięte API NASA Exoplanet Archive).
+   * **Automatyczne obejście blokad CORS:** wbudowane proxy serwera Vite (`/proxy?url=...`) umożliwia pobieranie danych z zewnętrznych endpointów bez ograniczeń przeglądarki.
+   * **Obsługa plików lokalnych:** mechanizm przeciągnij i upuść (*Drag & Drop*) lub przycisk wyboru pliku.
+   * **Wielkoformatowe pliki tekstowe:** asynchroniczne czytanie strumieniowe (`ReadableStream` / `TextDecoder`) w osobnym wątku (**Web Worker**). Dane numeryczne są parsowane bezpośrednio do tablic `Float64Array`, co zapobiega blokowaniu interfejsu użytkownika (UI) nawet przy plikach rzędu 150-200 MB i setkach tysięcy wierszy.
+   * **Obsługiwane formaty:** JSON (płaski, zagnieżdżony, obiekt kolumnowy), NDJSON, CSV, TSV oraz pliki `.dat` (astronomiczny format kolumnowy rozdzielany białymi znakami, z komentarzami `#`).
+
+2. **Interaktywna wizualizacja (D3.js):**
+   * Wybór jednej lub wielu kolumn liczbowych jednocześnie.
+   * Tryby nakładania serii danych: **nałożone**, **skumulowane**, **obok siebie** oraz **osobne panele**.
+   * Wybór liczby przedziałów (*bins*): ręczny suwak lub automatyczny algorytm oparty na **regule Freedmana-Diaconisa**.
+   * Przełączanie skali osi X między **liniową** a **logarytmiczną**.
+   * Interaktywny pędzel (*brush*): zaznaczanie myszą zakresu bezpośrednio na wykresie.
+   * Tooltipy z dokładną liczbą zliczeń po najechaniu na słupki.
+   * Eksport wykresu do wektorowego formatu **SVG**.
+
+3. **Filtracja i analiza statystyczna:**
+   * Niezależne suwaki zakresu wartości dla każdej wybranej kolumny.
+   * Pomijanie wartości odstających lub znaczników braku danych (np. `-100`, `-999`, wartości zmiennoprzecinkowe) z uwzględnieniem tolerancji numerycznej.
+   * Tabela ze statystykami wyliczonymi w czasie rzeczywistym: liczność (*N*), średnia, mediana, odchylenie standardowe, minimum i maksimum.
+   * Podgląd pierwszych 20 wierszy surowych danych.
+
+---
+
+## Architektura projektu
+
+```text
+├── CMC_MPOP_n100k_T0.dat   # Przykładowy duży plik danych astronomicznych (model populacji)
+├── index.html              # Główny szablon HTML aplikacji
+├── package.json            # Zależności i skrypty
+├── vite.config.js          # Konfiguracja Vite oraz middleware proxy CORS
+└── src/
+    ├── main.jsx            # Punkt wejścia React
+    ├── App.jsx             # Główny komponent widoku i zarządzanie stanem
+    ├── App.css             # Style interfejsu użytkownika
+    ├── Histogram.jsx       # Renderowanie i interakcje wykresu D3 (SVG, osie, brush)
+    ├── ColumnPicker.jsx    # Komponent wyboru kolumn do analizy
+    ├── RangeFilter.jsx     # Komponent suwaków zakresu danych
+    ├── binning.js          # Obliczenia statystyczne i algorytmy podziału na przedziały
+    ├── columns.js          # Zarządzanie strukturami danych Float64Array
+    ├── data.js             # Logika pobierania, proxy oraz detekcji formatu danych
+    ├── loadData.js         # Zarządzanie komunikacją z Web Workerem
+    ├── textParser.js       # Strumieniowy parser tekstu i separatorów
+    └── parser.worker.js    # Web Worker do parsowania w tle
 ```
-
-Otwórz adres wypisany przez Vite (domyślnie http://localhost:3000).
-
-## Funkcje
-
-- **Źródła danych** – aplikacja działa na dowolnych linkach podanych przez użytkownika (na start lista
-  zawiera jeden przykładowy link do API NASA Exoplanet Archive); kolejne źródła dodaje się,
-  wklejając URL do API w polu „Dodaj źródło” (brak `https://` jest uzupełniany). Dodane źródła są
-  zapamiętywane w przeglądarce i można je usuwać przyciskiem ✕. Format jest wykrywany automatycznie:
-  - JSON – tablica obiektów, tablica tablic (pierwszy wiersz = nagłówek), tablica liczb,
-    obiekt kolumnowy `{ kol: [...], kol2: [...] }` (np. Open-Meteo, jednostki z `*_units`),
-    tabela zagnieżdżona głębiej (np. `products`, `data.items`), GeoJSON (`features[].properties`);
-    zagnieżdżone pola są spłaszczane (`properties.mag`). Gdy w odpowiedzi jest kilka tabel – wybór z listy.
-  - NDJSON (jeden obiekt JSON na linię)
-  - CSV, TSV, separator `;` lub `|` (wykrywany automatycznie); linie zaczynające się od `#` są pomijane
-  - tekst/`.dat` z kolumnami rozdzielonymi spacjami lub tabulatorami (typowe pliki astronomiczne):
-    linie `#` to komentarze, ostatnia linia `#` jest nagłówkiem, jeśli ma tyle nazw co kolumn
-    (albo pierwsza linia danych z samymi nazwami); w przeciwnym razie kolumny to `col_1…col_n`
-  - API bez nagłówków CORS są pobierane automatycznie przez proxy serwera dev (`/proxy?url=…`)
-    – takie linki działają tylko w `npm run dev`.
-- **Pliki lokalne** – przycisk „Wybierz plik…” albo przeciągnięcie pliku na stronę
-  (`.csv`, `.tsv`, `.txt`, `.json`, `.geojson`, `.ndjson`, `.dat`). Plik pojawia się na liście źródeł
-  jako „Plik: nazwa”, jest czytany w przeglądarce (działa też po `npm run build`, bez proxy)
-  i nie jest zapamiętywany po odświeżeniu strony. Pliki tekstowe są czytane strumieniowo, więc
-  działają także pliki > 1 GB (> 1 mln wierszy); postęp widać na pasku pod listą źródeł.
-  Pliki JSON są wczytywane w całości (limit 400 MB) – duże dane najlepiej podawać jako CSV/tekst.
-- **Wiele kolumn** – na liście „Kolumny” można zaznaczyć dowolnie wiele kolumn liczbowych (pole
-  „Szukaj kolumny…” filtruje długą listę). Każda kolumna ma własny kolor i pozycję w legendzie.
-  Domyślnie wybierana jest pierwsza kolumna, która nie wygląda na identyfikator (`id`, `source_id`,
-  `designation`…) i nie jest stała.
-- **Sposób rysowania** – nałożone (półprzezroczyste słupki), skumulowane (jeden na drugim),
-  obok siebie (słupki kolumn w każdym przedziale) albo osobne panele ze wspólną osią X.
-  Wszystkie kolumny mają te same granice przedziałów, więc tryby można porównywać.
-- **Zakresy** – osobny suwak „od/do” dla każdej rysowanej kolumny (do obcinania wartości odstających);
-  oś X obejmuje sumę zakresów. Zaznaczenie myszą na wykresie (brush) ustawia ten sam zakres
-  dla wszystkich rysowanych kolumn. Pole „Pomijaj wartości” (np. `-100, -999`) usuwa znaczniki
-  braku danych ze wszystkich kolumn; puste pola i `nan`/`NA`/`null` są zawsze pomijane.
-- Liczba przedziałów (suwak lub automatycznie – reguła Freedmana–Diaconisa), skala lin/log osi X.
-- **Eksport wykresu** – pobranie histogramu (z legendą) jako plik SVG.
-- Statystyki dla każdej kolumny (N, średnia, mediana, odch. std., min, max) i podgląd
-  pierwszych 20 wierszy tabeli.
-
-## Duże pliki – jak to działa
-
-Plik jest czytany w Web Workerze (`file.stream()` + `TextDecoder`, linia po linii), więc strona się
-nie zawiesza, a limit długości napisu w JS nie ma znaczenia. Kolumny liczbowe są przechowywane jako
-`Float64Array` (brak danych = `NaN`), kolumny tekstowe tylko w podglądzie. Przedziały są liczone
-prostą pętlą po tablicach typowanych, bez ponownego parsowania – zmiana kolumn, trybu, zakresów czy
-liczby przedziałów przelicza tylko histogram. Pamięć: ok. 8 bajtów × wiersze × kolumny liczbowe
-(np. 1,3 mln wierszy × 65 kolumn ≈ 650 MB).
-
-Duże pliki danych `CMC_MPOP_*.dat` są w `.gitignore`, żeby nie trafiły przypadkiem do repozytorium.
-
-## Struktura
-
-- `src/data.js` – źródła i pobieranie (proxy CORS), wykrywanie formatu, tabele z JSON-a
-- `src/textParser.js` – strumieniowy parser CSV/TSV/tekstu kolumnowego (`#` komentarze/nagłówek)
-- `src/columns.js` – budowanie kolumn `Float64Array`
-- `src/parser.worker.js`, `src/loadData.js` – parsowanie w Web Workerze (postęp, przerwanie)
-- `src/binning.js` – zakresy, przedziały, statystyki, reguła F-D na tablicach typowanych
-- `src/Histogram.jsx` – histogram w D3 (tryby, legenda, osie, tooltip, brush)
-- `src/ColumnPicker.jsx` – wybór wielu kolumn
-- `src/RangeFilter.jsx` – suwak zakresu „od/do”
-- `src/App.jsx` – stan aplikacji i panel sterowania

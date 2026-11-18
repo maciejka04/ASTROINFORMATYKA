@@ -51,7 +51,6 @@ export async function fetchText(url) {
 
 const looksLikeJson = (text) => /^\s*[[{]/.test(text.replace(/^\uFEFF/, ''))
 
-// Parses a whole response/file body into typed-array tables. onProgress(fraction, rows) is optional.
 export function parseText(text, contentType = '', onProgress) {
   const trimmed = text.replace(/^\uFEFF/, '').trim()
   if (!trimmed) throw new Error('Pusta odpowiedź')
@@ -67,12 +66,11 @@ export function parseText(text, contentType = '', onProgress) {
   return parser.finish()
 }
 
-// Streams a File line by line, so files far larger than the maximum JS string length can be read.
 export async function parseFile(file, onProgress) {
   const head = await file.slice(0, 4096).text()
   if (looksLikeJson(head)) {
     if (file.size > MAX_JSON_FILE_BYTES) {
-      throw new Error(`Plik JSON jest za duży (${Math.round(file.size / 2 ** 20)} MB, limit ${MAX_JSON_FILE_BYTES / 2 ** 20} MB) – użyj CSV/tekstu`)
+      throw new Error(`Plik JSON jest za duży (${Math.round(file.size / 2 ** 20)} MB, limit ${MAX_JSON_FILE_BYTES / 2 ** 20} MB) - użyj CSV/tekstu`)
     }
     return parseText(await file.text(), file.type, onProgress)
   }

@@ -31,15 +31,25 @@ function loadSavedSources() {
     localStorage.removeItem(LEGACY_STORAGE_KEY)
     const saved = JSON.parse(localStorage.getItem(STORAGE_KEY))
     if (Array.isArray(saved) && saved.length) return saved
-  } catch {}
+  } catch { }
   return DEFAULT_SOURCES
 }
 
-const parseIgnore = (text) =>
-  new Set(text.split(/[\s,;]+/).filter(Boolean).map(Number).filter(Number.isFinite))
+const parseIgnore = (text) => {
+  const tokens = text.trim().split(/\s*,\s*|\s+/).filter(Boolean)
+  const nums = []
+  for (const t of tokens) {
+    const n = Number(t)
+    if (Number.isFinite(n)) {
+      nums.push(n)
+    } else {
+      const withDot = Number(t.replace(',', '.'))
+      if (Number.isFinite(withDot)) nums.push(withDot)
+    }
+  }
+  return new Set(nums)
+}
 
-// Per-column memo: recomputes a column's result only when one of its own inputs changed,
-// so editing one column's range does not rescan the other (possibly multi-million-row) columns.
 function useColumnCache() {
   const ref = useRef(new Map())
   return useCallback((key, deps, compute) => {
@@ -78,7 +88,7 @@ export default function App() {
   const statsCache = useColumnCache()
 
   useEffect(() => {
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(sources)) } catch {}
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(sources)) } catch { }
   }, [sources])
 
   const cancelFileLoad = () => {
@@ -218,7 +228,6 @@ export default function App() {
 
   const ignore = useMemo(() => parseIgnore(ignoreText), [ignoreText])
 
-  // Ranges belong to one (table, ignored values, log scale) scope; changing any of these starts afresh.
   const rangeScope = useMemo(() => ({ columns, ignore, logX }), [columns, ignore, logX])
   const ranges = rangeState.scope === rangeScope ? rangeState.ranges : EMPTY_RANGES
   const setRanges = useCallback((update) => {
@@ -348,8 +357,7 @@ export default function App() {
             )}
             {status.error && <span className="error">Błąd: {status.error}</span>}
             {!status.loading && !status.error && table &&
-              `${isFile ? `${file.name} · ` : ''}${result.format}${result.viaProxy ? ' (przez proxy)' : ''} · ` +
-              `${fmtInt(table.rowCount)} wierszy, ${columns.length} kolumn liczbowych · ${(result.ms / 1000).toFixed(1)} s`}
+              `${fmtInt(table.rowCount)} wierszy, ${columns.length} kolumn liczbowych`}
           </small>
           {result?.tables.length > 1 && (
             <>
@@ -362,7 +370,7 @@ export default function App() {
         </div>
 
         <div className="control">
-          <label>Kolumny (można wybrać kilka)</label>
+          <label>KOLUMNY (1 lub wiecej)</label>
           <ColumnPicker
             columns={columns.map((c) => c.name)}
             selected={selected}
@@ -377,7 +385,7 @@ export default function App() {
           </select>
 
           <label htmlFor="bins">
-            Liczba przedziałów: {autoBins ? `${edges ? edges.length - 1 : '—'} (automatycznie, reguła F-D)` : binCount}
+            Liczba przedziałów: {autoBins ? `${edges ? edges.length - 1 : '-'} (automatycznie, reguła F-D)` : binCount}
           </label>
           <input
             id="bins"
@@ -391,7 +399,7 @@ export default function App() {
 
           <label className="checkbox">
             <input type="checkbox" checked={autoBins} onChange={(e) => setAutoBins(e.target.checked)} />
-            Automatyczny dobór przedziałów (Freedman–Diaconis)
+            Automatyczny dobór przedziałów Freedman-Diaconis
           </label>
 
           <label className="checkbox">
@@ -401,7 +409,7 @@ export default function App() {
         </div>
 
         <div className="control">
-          <label htmlFor="ignore">Pomijaj wartości (np. znacznik braku danych)</label>
+          <label htmlFor="ignore">Pomijaj wartości</label>
           <input
             id="ignore"
             type="text"
@@ -427,16 +435,16 @@ export default function App() {
               <button className="secondary" onClick={() => setRanges({})} disabled={!Object.keys(ranges).length}>
                 Resetuj zakresy
               </button>
-              <small>Wskazówka: zaznacz zakres myszą na wykresie – zostanie ustawiony dla wszystkich rysowanych kolumn.</small>
+              <small>Wskazówka: zaznacz zakres myszą na wykresie - zostanie ustawiony dla wszystkich rysowanych kolumn.</small>
             </>
-          ) : <small>—</small>}
+          ) : <small>-</small>}
         </div>
       </section>
 
       <section className="panel">
         <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '10px' }}>
           <button className="secondary" onClick={() => histogramRef.current?.exportSvg()}>
-            💾 Pobierz wykres (SVG)
+            Pobierz wykres
           </button>
         </div>
 
@@ -452,7 +460,7 @@ export default function App() {
         {stats.length > 0 && (
           <table className="stats">
             <thead>
-              <tr><th>kolumna</th><th>N</th><th>średnia</th><th>mediana</th><th>odch. std.</th><th>min</th><th>max</th></tr>
+              <tr><th>kolumna</th><th>N</th><th>średnia</th><th>mediana</th><th>odchylenie standardowe</th><th>minimum</th><th>maksimum</th></tr>
             </thead>
             <tbody>
               {stats.map((s) => (
@@ -463,7 +471,7 @@ export default function App() {
                       <td>{fmtInt(s.n)}</td>
                       <td>{fmt(s.mean)}</td>
                       <td>{fmt(s.median)}</td>
-                      <td>{s.std === undefined ? '—' : fmt(s.std)}</td>
+                      <td>{s.std === undefined ? '-' : fmt(s.std)}</td>
                       <td>{fmt(s.min)}</td>
                       <td>{fmt(s.max)}</td>
                     </>

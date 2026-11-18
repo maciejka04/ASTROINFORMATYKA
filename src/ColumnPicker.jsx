@@ -25,12 +25,16 @@ export default function ColumnPicker({ columns, selected, onChange, colorOf, lab
             </label>
           )
         })}
-        {!visible.length && <small>—</small>}
+        {!visible.length && <small>-</small>}
       </div>
-      <small>
-        Wybrano: {selected.length}
-        {selected.length > 0 && <button type="button" className="link" onClick={() => onChange([])}>wyczyść</button>}
-      </small>
+      <div className="column-picker-footer">
+        <small>Wybrano: {selected.length}</small>
+        {selected.length > 0 && (
+          <button type="button" className="secondary btn-clear" onClick={() => onChange([])}>
+            Wyczyść
+          </button>
+        )}
+      </div>
     </div>
   )
 }

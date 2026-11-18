@@ -1,5 +1,3 @@
-// Fast histogram math over Float64Array columns (NaN = missing). A "filter" is
-// { range: [lo, hi] | null, ignore: Set<number>, logX: boolean }.
 
 const MAX_AUTO_BINS = 200
 const MIN_AUTO_BINS = 5
@@ -14,12 +12,16 @@ function prepare({ range, ignore, logX }) {
   }
 }
 
-// Hot path: called once per value, so it takes the pre-flattened filter from prepare().
+const EPSILON = 1e-7
+
 function accepts(v, p) {
   if (!(v >= p.lo && v <= p.hi)) return false
   if (p.positive && v <= 0) return false
   const ig = p.ignored
-  for (let j = 0; j < ig.length; j++) if (v === ig[j]) return false
+  for (let j = 0; j < ig.length; j++) {
+    const x = ig[j]
+    if (v === x || Math.abs(v - x) <= EPSILON * Math.max(1, Math.abs(x))) return false
+  }
   return true
 }
 
@@ -128,7 +130,6 @@ export function columnStats(values, filter) {
   return { n, mean, std: n > 1 ? Math.sqrt(m2 / (n - 1)) : undefined, min, max, median: median(kept, n) }
 }
 
-// Freedman–Diaconis rule on a strided sample of all drawn columns, computed in the axis space (log10 for log X).
 export function autoBinCount(columns, domain, logX) {
   const picked = []
   for (const { values, filter } of columns) {

@@ -4,8 +4,6 @@ const MISSING = /^(nan|na|n\/a|null|none|inf|-inf|\+inf|infinity|-infinity|-|\?)
 
 export const PREVIEW_ROWS = 20
 
-// Accumulates one column as Float64Array chunks (NaN = missing) so that millions of rows never
-// live as JS objects; columns that turn out to be text are dropped after the first rows.
 export class ColumnBuilder {
   constructor(name) {
     this.name = name
